@@ -1,0 +1,458 @@
+---
+title: "1.7.22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+library(sf)
+
+HPRM_full <- read_rds("~/HPRM/data/us_df_full.rds")
+```
+
+#select Bay Area counties: Alameda, Contra Costa, Marin, Napa, San Francisco, San Mateo, Santa Clara, Solano, and Sonoma 
+
+```{r}
+HPRM_bayarea <- HPRM_full %>%
+  filter(grepl('Alameda|Contra Costa|Marin|Napa|San Francisco|San Mateo|Santa Clara|Solano|Sonoma', NAM))
+
+#change GEOID to numeric for merging later
+str(HPRM_bayarea)
+HPRM_bayarea$GEOID <- as.numeric(HPRM_bayarea$GEOID)
+```
+
+#reading in and cleaning PLACE data: PLACES__Census_Tract_Data__GIS_Friendly_Format___2021_release
+```{r}
+#read in CA PLACES data and filter for Bay Area 9 counties
+PLACES_MH_Bay <- read_csv("~/HPRM/data/PLACES_GIS_Census_2021_CA.csv") %>%
+  filter(grepl('Alameda|Contra Costa|Marin|Napa|San Francisco|San Mateo|Santa Clara|Solano|Sonoma', CountyName))
+
+```
+# read in Housing policy and HPSA data
+```{r}
+HPSAMH_df <- read_csv("~/HPRM/data/Health_Professional_Shortage_Area_Mental_Health.csv") %>%
+  filter(grepl('Alameda|Contra Costa|Marin|Napa|San Francisco|San Mateo|Santa Clara|Solano|Sonoma', COUNTY))
+
+install.packages("xlsx")
+library("xlsx")
+#read in housing policy directory
+bay_area_policy_2017 <- read.xlsx("~/HPRM/data/Bay_Area_Metro_Housing_Policy_Directory_2017.xlsx", sheetIndex =2)
+
+#delete first row (empty)
+bay_area_policy_2017 <- bay_area_policy_2017[-1,]
+
+#switch rows and columns
+bay_area_policy_2017_t <- data.frame(t(bay_area_policy_2017))
+
+#remove row names
+rownames(bay_area_policy_2017_t) <- c()
+
+
+#change column names to first row then delete first row and blank last two rows
+names(bay_area_policy_2017_t) <- bay_area_policy_2017_t[1,]
+
+bay_area_policy_2017_t <- bay_area_policy_2017_t[-1,]
+bay_area_policy_2017_t <- bay_area_policy_2017_t[-111,]
+bay_area_policy_2017_t <- bay_area_policy_2017_t[-110,]
+
+#Label counties
+county_list <- bay_area_policy_2017_t[[1]]
+
+county_list[1:15] <- "Alameda"
+county_list[16:35] <- "Contra Costa"
+county_list[36:47] <- "Marin"
+county_list[48:53] <- "Napa"
+county_list[54] <- "San Francisco"
+county_list[55:76] <- "San Mateo"
+county_list[77:91] <- "Santa Clara"
+county_list[92:99] <- "Solano"
+county_list[100:109] <- "Sonoma"
+
+county_list
+
+bay_area_policy_2017_t[1] <- county_list
+
+#label county column
+colnames(bay_area_policy_2017_t)[1] <- "CountyName"
+```
+
+
+#outer merge of HPRM and PLACES data
+```{r}
+
+merge_1 <- merge(HPRM_bayarea, PLACES_MH_Bay, by.x = "GEOID", by.y = "LocationName", all = TRUE)
+```
+#read in census tract/bay area county and city data, merge with policy data, and merge with merge_1
+```{r}
+library(readxl)
+
+#read in census tract data
+census_tracts_alameda <- read_xls("~/HPRM/data/census_tract_numbers.xls")
+names(census_tracts_alameda) <- census_tracts_alameda[1,]
+census_tracts_alameda <- census_tracts_alameda[-1,]
+
+census_tracts_contracosta <- read_xls("~/HPRM/data/census_tract_numbers.xls", sheet = 2)
+names(census_tracts_contracosta) <- census_tracts_contracosta[1,]
+census_tracts_contracosta <- census_tracts_contracosta[-1,]
+
+census_tracts_marin <- read_xls("~/HPRM/data/census_tract_numbers.xls", sheet = 3)
+names(census_tracts_marin) <- census_tracts_marin[1,]
+census_tracts_marin <- census_tracts_marin[-1,]
+
+census_tracts_napa <- read_xls("~/HPRM/data/census_tract_numbers.xls", sheet = 4)
+names(census_tracts_napa) <- census_tracts_napa[1,]
+census_tracts_napa <- census_tracts_napa[-1,]
+
+census_tracts_sanfrancisco <- read_xls("~/HPRM/data/census_tract_numbers.xls", sheet = 5)
+names(census_tracts_sanfrancisco) <- census_tracts_sanfrancisco[1,]
+census_tracts_sanfrancisco <- census_tracts_sanfrancisco[-1,]
+
+census_tracts_sanmateo <- read_xls("~/HPRM/data/census_tract_numbers.xls", sheet = 6)
+names(census_tracts_sanmateo) <- census_tracts_sanmateo[1,]
+census_tracts_sanmateo <- census_tracts_sanmateo[-1,]
+
+census_tracts_santaclara <- read_xls("~/HPRM/data/census_tract_numbers.xls", sheet = 7)
+names(census_tracts_santaclara) <- census_tracts_santaclara[1,]
+census_tracts_santaclara <- census_tracts_santaclara[-1,]
+
+census_tracts_solano <- read_xls("~/HPRM/data/census_tract_numbers.xls", sheet = 8)
+names(census_tracts_solano) <- census_tracts_solano[1,]
+census_tracts_solano <- census_tracts_solano[-1,]
+
+census_tracts_sonoma <- read_xls("~/HPRM/data/census_tract_numbers.xls", sheet = 9)
+names(census_tracts_sonoma) <- census_tracts_sonoma[1,]
+census_tracts_sonoma <- census_tracts_sonoma[-1,]
+
+
+#hash dictionary
+
+# assign_hash <- Vectorize(assign, vectorize.args = c("x", "value"))
+# get_hash <- Vectorize(get, vectorize.args = "x")
+# exists_hash <- Vectorize(exists, vectorize.args = "x")
+# 
+# alameda <- rep("Alameda", 17)
+# alameda_tracts <- na.omit(census_tracts_alameda[[1]])
+# 
+# hash <- new.env(hash = TRUE, parent = emptyenv(), size = 100L)
+# 
+# alameda_hash <- assign_hash(alameda_tracts, alameda, hash)
+
+# install.packages("hash")
+# library(hash)
+# 
+# h <- hash()
+# alameda <- rep("Alameda", 17)
+# alameda_tracts <- na.omit(census_tracts_alameda[[1]])
+# 
+# h[alameda_tracts]<-alameda
+# alameda_tracts
+# h[["4271"]]
+# 
+# 
+# albany <- rep("Albany", 6)
+# albany_tracts <- na.omit(census_tracts_alameda[[2]])
+# 
+# berkeley <- rep("Berkeley", )
+# 
+# h[albany_tracts] <- albany
+
+
+
+# #test assigning merge_1 rows with city based on census tract
+# merge_1_alamedatest <- mutate(merge_1, city = h[merge_1$TRACTCE])
+
+#label each merge_1 census tract with city
+merge_1_city <- mutate(merge_1, "city" = case_when(
+ merge_1$NAME.x %in% census_tracts_alameda$Alameda ~ "Alameda",
+  NAME.x %in% census_tracts_alameda$Albany ~ "Albany",
+  NAME.x %in% census_tracts_alameda$Berkeley ~ "Berkeley",
+  NAME.x %in% census_tracts_alameda$Dublin ~ "Dublin",
+  NAME.x %in% census_tracts_alameda$Emeryville ~ "Emeryville", #
+  NAME.x %in% census_tracts_alameda$Fremont ~ "Fremont",
+  NAME.x %in% census_tracts_alameda$Hayward ~ "Hayward",
+  NAME.x %in% census_tracts_alameda$Livermore ~ "Livermore", #
+  NAME.x %in% census_tracts_alameda$Newark ~ "Newark",
+  NAME.x %in% census_tracts_alameda$Oakland ~ "Oakland",
+  NAME.x %in% census_tracts_alameda$Piedmont ~ "Piedmont",
+  NAME.x %in% census_tracts_alameda$Pleasanton ~ "Pleasanton",
+  NAME.x %in% census_tracts_alameda$"San Leandro" ~ "San Leandro",
+  NAME.x %in% census_tracts_alameda$"Union City" ~ "Union City",
+  NAME.x %in% census_tracts_contracosta$Antioch ~ "Antioch",
+  NAME.x %in% census_tracts_contracosta$Brentwood ~ "Brentwood", #       
+  NAME.x %in% census_tracts_contracosta$Clayton ~ "Clayton", #
+  NAME.x %in% census_tracts_contracosta$Concord ~ "Concord",
+  NAME.x %in% census_tracts_contracosta$Danville ~ "Danville", #
+  NAME.x %in% census_tracts_contracosta$"El Cerrito" ~ "El Cerrito",
+  NAME.x %in% census_tracts_contracosta$Hercules ~ "Hercules", #
+  NAME.x %in% census_tracts_contracosta$Lafayette ~ "Lafayette",
+  NAME.x %in% census_tracts_contracosta$Martinez ~ "Martinez",
+  NAME.x %in% census_tracts_contracosta$Moraga ~ "Moraga", #
+  NAME.x %in% census_tracts_contracosta$Oakley ~ "Oakley", #
+  NAME.x %in% census_tracts_contracosta$Orinda ~ "Orinda", #
+  NAME.x %in% census_tracts_contracosta$Pinole ~ "Pinole", #
+  NAME.x %in% census_tracts_contracosta$"Pleasant Hill" ~ "Pleasant Hill", 
+  NAME.x %in% census_tracts_contracosta$Richmond ~ "Richmond",
+  NAME.x %in% census_tracts_contracosta$"San Pablo" ~ "San Pablo", #
+  NAME.x %in% census_tracts_contracosta$`San Ramon` ~ "San Ramon",
+  NAME.x %in% census_tracts_contracosta$`Walnut Creek` ~ "Walnut Creek", #
+  NAME.x %in% census_tracts_marin$"Belvedere" ~ "Belvedere",
+  NAME.x %in% census_tracts_marin$"Corte Madera" ~ "Corte Madera", #
+  NAME.x %in% census_tracts_marin$Fairfax  ~"Fairfax", #
+  NAME.x %in% census_tracts_marin$"Mill Valley" ~ "Mill Valley", #
+  NAME.x %in% census_tracts_marin$Novato ~ "Novato",
+  NAME.x %in% census_tracts_marin$Ross ~ "Ross",
+  NAME.x %in% census_tracts_marin$"San Anselmo" ~ "San Anselmo", 
+  NAME.x %in% census_tracts_marin$"San Rafael" ~ "San Rafael",
+  NAME.x %in% census_tracts_marin$Sausalito  ~"Sausalito",#
+  NAME.x %in% census_tracts_marin$Tiburon ~ "Tiburon", #
+  NAME.x %in% census_tracts_napa$"American Canyon" ~ "American Canyon", #
+  NAME.x %in% census_tracts_napa$Calistoga ~ "Calistoga", #
+  NAME.x %in% census_tracts_napa$"St. Helena" ~ "St. Helena", #
+  NAME.x %in% census_tracts_napa$Yountville ~ "Yountville", #
+  NAME.x %in% census_tracts_sanfrancisco$"San Francisco" ~ "San Francisco",
+  NAME.x %in% census_tracts_sanmateo$"Half Moon Bay" ~ "Half Moon Bay", #
+  NAME.x %in% census_tracts_sanmateo$"Hillsborough" ~ "Hillsborough", #
+  NAME.x %in% census_tracts_sanmateo$"Menlo Park" ~ "Menlo Park",
+  NAME.x %in% census_tracts_sanmateo$"Millbrae" ~ "Millbrae",
+  NAME.x %in% census_tracts_sanmateo$"Pacifica" ~ "Pacifica",
+  NAME.x %in% census_tracts_sanmateo$"Portola Valley" ~ "Portola Valley", #
+  NAME.x %in% census_tracts_sanmateo$"Redwood City" ~ "Redwood City",
+  NAME.x %in% census_tracts_sanmateo$"San Bruno" ~ "San Bruno",
+  NAME.x %in% census_tracts_sanmateo$"San Carlos" ~ "San Carlos",
+  NAME.x %in% census_tracts_sanmateo$"San Mateo" ~ "San Mateo",
+  NAME.x %in% census_tracts_sanmateo$"South San Francisco" ~ "South San Francisco",
+  NAME.x %in% census_tracts_sanmateo$"Woodside" ~ "Woodside",
+  NAME.x %in% census_tracts_santaclara$"Campbell" ~ "Campbell", #
+  NAME.x %in% census_tracts_santaclara$"Cupertino" ~ "Cupertino", #
+  NAME.x %in% census_tracts_santaclara$Gilroy ~ "Gilroy", #
+  NAME.x %in% census_tracts_santaclara$"Los Altos" ~ "Los Altos",
+  NAME.x %in% census_tracts_santaclara$"Los Altos Hills" ~ "Los Altos Hills",#
+  NAME.x %in% census_tracts_santaclara$"Los Gatos" ~ "Los Gatos", #
+  NAME.x %in% census_tracts_santaclara$"Milpitas" ~ "Milpitas",
+  NAME.x %in% census_tracts_santaclara$"Monte Sereno" ~ "Monte Sereno", #
+  NAME.x %in% census_tracts_santaclara$"Morgan Hill" ~ "Morgan Hill", #
+  NAME.x %in% census_tracts_santaclara$"Mountain View" ~ "Mountain View",
+  NAME.x %in% census_tracts_santaclara$"Palo Alto" ~ "Palo Alto",
+  NAME.x %in% census_tracts_santaclara$"San Jose" ~ "San Jose",
+  NAME.x %in% census_tracts_santaclara$"Santa Clara" ~ "Santa Clara",
+  NAME.x %in% census_tracts_santaclara$"Saratoga" ~ "Saratoga",
+  NAME.x %in% census_tracts_santaclara$"Sunnyvale" ~ "Sunnyvale",
+  NAME.x %in% census_tracts_solano$"Benicia" ~ "Benicia",#
+  NAME.x %in% census_tracts_solano$"Dixon" ~ "Dixon",#
+  NAME.x %in% census_tracts_solano$"Fairfield" ~ "Fairfield",#
+  NAME.x %in% census_tracts_solano$"Rio Vista" ~ "Rio Vista", #
+  NAME.x %in% census_tracts_solano$"Suisun City" ~ "Suisun City",#
+  NAME.x %in% census_tracts_solano$"Vacaville" ~ "Vacaville",#
+  NAME.x %in% census_tracts_solano$"Vallejo" ~ "Vallejo", #
+  NAME.x %in% census_tracts_sonoma$"Cloverdale" ~ "Cloverdale",#
+  NAME.x %in% census_tracts_sonoma$"Cotati" ~ "Cotati",#
+  NAME.x %in% census_tracts_sonoma$"Healdsburg" ~ "Healdsburg", #
+  NAME.x %in% census_tracts_sonoma$"Petaluma" ~ "Petaluma", #
+  NAME.x %in% census_tracts_sonoma$"Rohnert Park" ~ "Rohnert Park",#
+  NAME.x %in% census_tracts_sonoma$"Santa Rosa" ~ "Santa Rosa", #
+  NAME.x %in% census_tracts_sonoma$"Sebastopol" ~ "Sebastopol", #
+  NAME.x %in% census_tracts_sonoma$"Sonoma" ~ "Sonoma", #
+  NAME.x %in% census_tracts_sonoma$"Windsor" ~ "Windsor",#
+TRUE ~ "NA"))
+
+test2<-merge_1_city %>%
+group_by(city) %>%
+summarize(count = n())
+
+#outer merge of merge_1 and policy data
+
+# "4271" %in% census_tracts_alameda$Alameda
+
+#merge_2 <- merge(merge_1, bay_area_policy_2017_t, by = "city", all = TRUE)
+
+#outer merge of merge_2 and HPSA data
+#merge_2 <- merge(merge_1_city, HPSAMH_df, by = , all = TRUE)
+
+```
+
+
+#visualizing data
+```{r MENTAL HEALTH}
+
+merge_1MH <- merge_1 %>%
+  filter(MeasureId == "MHLTH")
+
+library(dplyr)
+library(knitr)
+library(ggplot2)
+table(merge_1MH$NeighType)
+ggplot(merge_1, aes(x=pBlack))+
+  geom_histogram()
+#percent race vs prevalence MH outcome
+
+MHsum <- merge_1MH %>%
+  group_by(NeighType) %>%
+  summarize("Data_Value" = mean(Data_Value))
+
+ggplot(MHsum, aes(x=NeighType, y= Data_Value)) +
+  geom_bar(stat="identity")+
+	      theme(axis.text.x = element_text(angle = -45, hjust = 0))+ 
+        labs(title="Neighborhood Type vs. Average prevalence of MH Outcome", y="Average prevalence MH Outcome", x="Neighborhood type", caption="MH Outcome = presence of poor mental health for more than 14 days out of 30 days. Data from CDC PLACES Survey 2019")
+
+
+#average prevalence per tract in that NeighType
+ggplot(merge_1MH, aes(x=pBlack, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+ggplot(merge_1MH, aes(x=pWhite, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+ggplot(merge_1MH, aes(x=pLatinx, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+ggplot(merge_1MH, aes(x=pAsian, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+
+#percent race and HPRM scale
+ggplot(merge_1MH, aes(x=pLatinx, y=hprm_scale)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+ggplot(merge_1MH, aes(x=pBlack, y=hprm_scale)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+#HRPM scale and MH outcome prevalence
+ggplot(merge_1MH, aes(x=hprm_scale, y=Data_Value)) +
+  geom_point(stat="identity")
+
+M1 <- lm(data = merge_1MH, Data_Value ~ hprm_scale)
+summary(M1)
+
+M2 <- lm(data = merge_1MH, Data_Value ~ hprm_scale + pBlack + pLatinx + pAsian + pWhite)
+summary(M2)
+
+M3 <- lm(data = merge_1MH, Data_Value ~ hprm_scale + pBlack + pLatinx + pAsian)
+summary(M3)
+```
+
+```{r DEPRESSION}
+merge_1D <- merge_1 %>%
+  filter(MeasureId == "DEPRESSION")
+
+library(dplyr)
+library(knitr)
+library(ggplot2)
+table(merge_1D$NeighType)
+ggplot(merge_1D, aes(x=pBlack))+
+  geom_histogram()
+#percent race vs prevalence Depression outcome
+
+DEPsum <- merge_1D %>%
+  group_by(NeighType) %>%
+  summarize("Data_Value" = mean(Data_Value))
+
+ggplot(DEPsum, aes(x=NeighType, y= Data_Value)) +
+  geom_bar(stat="identity")+
+	      theme(axis.text.x = element_text(angle = -45, hjust = 0))+ 
+        labs(title="Neighborhood Type vs. Average prevalence of Depression Outcome", y="Average prevalence Depression", x="Neighborhood type", caption="Depression Outcome = presence of diagnosis of depression (including depression, major depression, dysthymia, or minor depression) among respondents age 18 or older. Data from CDC PLACES Survey 2019")
+
+#average prevalence per tract in that NeighType
+ggplot(merge_1D, aes(x=pBlack, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+ggplot(merge_1D, aes(x=pWhite, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+ggplot(merge_1D, aes(x=pLatinx, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+ggplot(merge_1D, aes(x=pAsian, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+
+#percent race and HPRM scale
+ggplot(merge_1D, aes(x=pLatinx, y=hprm_scale)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+ggplot(merge_1D, aes(x=pBlack, y=hprm_scale)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+#HRPM scale and MH outcome prevalence
+ggplot(merge_1D, aes(x=hprm_scale, y=Data_Value)) +
+  geom_point(stat="identity")
+
+M1 <- lm(data = merge_1D, Data_Value ~ hprm_scale)
+summary(M1)
+
+M2 <- lm(data = merge_1D, Data_Value ~ hprm_scale + pBlack + pLatinx + pAsian + pWhite)
+summary(M2)
+
+M3 <- lm(data = merge_1D, Data_Value ~ hprm_scale + pBlack + pLatinx + pAsian)
+summary(M3)
+```
+
+```{r SLEEP}
+merge_1S <- merge_1 %>%
+  filter(MeasureId == "SLEEP")
+
+library(dplyr)
+library(knitr)
+library(ggplot2)
+table(merge_1MH$NeighType)
+ggplot(merge_1, aes(x=pBlack))+
+  geom_histogram()
+#percent race vs prevalence sleep outcome
+
+SLEEPsum <- merge_1S %>%
+  group_by(NeighType) %>%
+  summarize("Data_Value" = mean(Data_Value))
+
+ggplot(SLEEPsum, aes(x=NeighType, y= Data_Value)) +
+  geom_bar(stat="identity")+
+	      theme(axis.text.x = element_text(angle = -45, hjust = 0))+ 
+        labs(title="Neighborhood Type vs. Average prevalence of Sleep Outcome", y="Average prevalence MH Outcome", x="Neighborhood type", caption="Sleep Outcome = usually sleeping less than 7 hours per night among respondents age 18 or older. Data from CDC PLACES Survey 2019")
+
+#average prevalence per tract in that NeighType
+ggplot(merge_1S, aes(x=pBlack, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+ggplot(merge_1S, aes(x=pWhite, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+ggplot(merge_1S, aes(x=pLatinx, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+ggplot(merge_1S, aes(x=pAsian, y=Data_Value)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+
+#percent race and HPRM scale
+ggplot(merge_1S, aes(x=pLatinx, y=hprm_scale)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+ggplot(merge_1S, aes(x=pBlack, y=hprm_scale)) +
+  geom_point(stat="identity") +
+  geom_smooth()
+
+#HRPM scale and MH outcome prevalence
+ggplot(merge_1S, aes(x=hprm_scale, y=Data_Value)) +
+  geom_point(stat="identity")
+
+M1 <- lm(data = merge_1S, Data_Value ~ hprm_scale)
+summary(M1)
+
+M2 <- lm(data = merge_1S, Data_Value ~ hprm_scale + pBlack + pLatinx + pAsian + pWhite)
+summary(M2)
+
+M3 <- lm(data = merge_1S, Data_Value ~ hprm_scale + pBlack + pLatinx + pAsian)
+summary(M3)
+```
